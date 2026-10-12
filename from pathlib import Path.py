@@ -1,0 +1,203 @@
+from pathlib import Path
+import webbrowser
+
+HTML = r'''<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Auditor del Simplex</title>
+<style>
+:root{--bg:#f6f1e6;--card:#fffdf8;--ink:#1e2a44;--mut:#5b6580;--acc:#2f4570;--gold:#f5b81c;--ok:#1f7a45;--bad:#b3261e;--line:#d9d0bd;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141a2b;--card:#1d2540;--ink:#eef0f7;--mut:#a5adc6;--acc:#8fb0ee;--line:#34406a;--ok:#5fd18c;--bad:#ff8a80}}
+:root[data-theme="dark"]{--bg:#141a2b;--card:#1d2540;--ink:#eef0f7;--mut:#a5adc6;--acc:#8fb0ee;--line:#34406a;--ok:#5fd18c;--bad:#ff8a80}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.45}
+main{max-width:760px;margin:0 auto;padding:18px 14px 60px}
+h1{font-size:1.7rem;margin:.2em 0;color:var(--acc)}
+h2{font-size:1.15rem;margin:1.4em 0 .5em;color:var(--acc);border-bottom:3px solid var(--gold);padding-bottom:4px}
+.sub{color:var(--mut);margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0}
+.rules{font-size:.92rem}
+label{display:block;font-size:.88rem;color:var(--mut);margin-bottom:3px}
+input[type=text]{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-size:1rem}
+textarea{width:100%;min-height:90px;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.grp{font-weight:700;margin:14px 0 6px}
+button{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:12px 18px;font-size:1rem;font-weight:600;cursor:pointer}
+:root:not([data-theme="light"]) button{color:#10172b}
+button.sec{background:transparent;color:var(--acc);border:2px solid var(--acc)}
+.opt{display:block;padding:9px 11px;margin:6px 0;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:var(--bg)}
+.opt input{margin-right:8px}
+.q{font-weight:600;margin-bottom:6px}
+.tf{display:flex;gap:10px;margin-top:6px}
+.tf label{flex:1;margin:0;padding:9px;text-align:center;border:1px solid var(--line);border-radius:8px;cursor:pointer;color:var(--ink);background:var(--bg)}
+.hide{display:none}
+.score{font-size:2.4rem;font-weight:800;color:var(--acc)}
+.ok{color:var(--ok);font-weight:700}.bad{color:var(--bad);font-weight:700}
+.rev{font-size:.92rem;border-left:4px solid var(--bad);padding-left:10px;margin:8px 0}
+.rev.g{border-color:var(--ok)}
+.warn{background:var(--gold);color:#2a2100;padding:8px 12px;border-radius:8px;font-size:.9rem;font-weight:600}
+</style>
+</head>
+<body>
+<main>
+<h1>Auditor del Simplex</h1>
+<p class="sub">Retroalimentación · Método Simplex: maximización · Ingeniería Financiera</p>
+
+<section id="start" class="card">
+  <label for="nom">Nombre</label>
+  <input type="text" id="nom" placeholder="Tu nombre completo" autocomplete="off">
+  <p class="rules"><b>Reglas:</b> en la <b>Parte 1</b> capturas datos <u>mientras</u> el equipo expone. Al terminar, la captura se <b>bloquea y desaparece</b>, y contestas las demás partes sin poder regresar. Sin fotos a las diapositivas. Las preguntas se revuelven en cada intento.</p>
+  <button id="go">Comenzar captura</button>
+</section>
+
+<section id="cap" class="hide">
+  <h2>Parte 1 · Captura en vivo</h2>
+  <div class="warn">Escribe lo que escuches. Una vez que cierres la captura no podrás volver.</div>
+  <div id="capForm"></div>
+  <p><button id="close">Cerrar captura y pasar al examen</button></p>
+</section>
+
+<section id="exam" class="hide">
+  <h2>Parte 2 · Comprensión</h2>
+  <p class="sub">Contesta con lo que anotaste. 1 pt c/u.</p>
+  <div id="mc"></div>
+  <h2>Parte 3 · Detector de errores</h2>
+  <p class="sub">¿Verdadera o falsa? 0.5 pts c/u.</p>
+  <div id="tfq"></div>
+  <h2>Parte 4 · Cierre</h2>
+  <p class="sub">Recomendación para el gerente usando solo los resultados presentados.</p>
+  <textarea id="rec" placeholder="Tu recomendación..."></textarea>
+  <p><button id="grade">Calificar</button></p>
+</section>
+
+<section id="res" class="hide"></section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const norm=s=>String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[₀-₉]/g,c=>c.charCodeAt(0)-8320).replace(/[−–]/g,'-').replace(/,/g,'.').replace(/\s+/g,' ').trim();
+const shuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
+
+const P1=[
+ ['Datos del problema',[
+  {l:'Nombre del taller',k:'inc',a:['maderas'],show:'Maderas del Bajío'},
+  {l:'Ciudad',k:'inc',a:['queretaro'],show:'Querétaro'},
+  {l:'Horas: corte y habilitado',k:'num',a:50},{l:'Horas: ensamble',k:'num',a:110},{l:'Horas: acabado y barnizado',k:'num',a:80},
+  {l:'Utilidad escritorio (miles $)',k:'num',a:5},{l:'Utilidad librero (miles $)',k:'num',a:4},{l:'Utilidad silla ejecutiva (miles $)',k:'num',a:3}]],
+ ['Iteración 1',[
+  {l:'Variable que entra',k:'ex',a:['x1'],show:'x1'},
+  {l:'Razón fila s1',k:'num',a:25},{l:'Razón fila s2',k:'num',a:27.5},{l:'Razón fila s3',k:'num',a:26.67,t:.02},
+  {l:'Variable que sale',k:'ex',a:['s1'],show:'s1'},
+  {l:'Z al terminar',k:'num',a:125},{l:'Valor de x1 al terminar',k:'num',a:25}]],
+ ['Iteración 2',[
+  {l:'Variable que entra',k:'ex',a:['x3'],show:'x3'},
+  {l:'Razón fila x1',k:'num',a:50},{l:'Razón fila s3',k:'num',a:10},
+  {l:'Variable que sale',k:'ex',a:['s3'],show:'s3'}]],
+ ['Plan óptimo',[
+  {l:'x1 (escritorios)',k:'num',a:20},{l:'x2 (libreros)',k:'num',a:0},{l:'x3 (sillas)',k:'num',a:10},{l:'Z máxima (miles $)',k:'num',a:130}]]
+];
+const MC=[
+ {q:'¿Qué representa cada variable de holgura (s1, s2, s3)?',o:['Unidades producidas de cada producto','Horas sin usar de cada área','Utilidad perdida por área','Horas extra que se pueden contratar'],c:1},
+ {q:'En la iteración 1, ¿por qué entró x1?',o:['Tenía la menor razón','Tenía el coeficiente más negativo en Z (−5)','Tenía el mayor RHS','Era el único coeficiente positivo'],c:1},
+ {q:'En la iteración 1, ¿qué fila tuvo la razón mínima y cuál fue la segunda más pequeña?',o:['Mínima s1 (25); segunda s3 (26.67)','Mínima s3 (26.67); segunda s1 (25)','Mínima s1 (25); segunda s2 (27.5)','Mínima s2 (27.5); segunda s3 (26.67)'],c:0},
+ {q:'En la tabla tras la iteración 1, ¿qué valor está en la fila s3 bajo x2?',o:['0.5','−0.5','−1.5','4'],c:1},
+ {q:'En la iteración 2, ¿por qué no se calculó la razón de la fila s2?',o:['Su RHS era 0','Su coeficiente en la columna pivote era 0','Ya era variable no básica','Era la razón mínima'],c:1},
+ {q:'¿Cuántas iteraciones se necesitaron y cómo cambió Z?',o:['Dos: 0 → 125 → 130','Tres: 0 → 125 → 130','Dos: 0 → 130 → 125','Una: 0 → 130'],c:0},
+ {q:'En la tabla final, ¿qué coeficiente tenía x2 en la fila Z y qué indica?',o:['3: positivo, y como toda la fila Z ≥ 0 ya es óptima','0: x2 es básica','−3: falta iterar','1: empate con s1'],c:0},
+ {q:'¿Cuántas horas ociosas quedan y dónde?',o:['10 en corte (40 usadas)','10 en ensamble (100 usadas)','10 en acabado (70 usadas)','Ninguna en ningún área'],c:1},
+ {q:'¿Cuál es la comprobación correcta de Z?',o:['5(20) + 4(0) + 3(10) = 130','5(25) + 4(0) + 3(0) = 125','5(20) + 4(10) + 3(0) = 140','5(10) + 4(0) + 3(20) = 110'],c:0}
+];
+const TF=[
+ {s:'El taller debe fabricar 10 libreros por semana.',v:false,f:'Son 0 libreros.'},
+ {s:'En la iteración 1 salió s1, con razón mínima de 25.',v:true},
+ {s:'El método llegó al óptimo en tres iteraciones.',v:false,f:'Fueron dos iteraciones.'},
+ {s:'En el plan óptimo sobran 10 horas de ensamble.',v:true},
+ {s:'La utilidad máxima es de $125,000.',v:false,f:'Es $130,000; 125 fue tras la iteración 1.'},
+ {s:'En la tabla inicial, el coeficiente de x2 en la fila Z era −4.',v:true}
+];
+
+let fields=[];
+function buildCap(){
+  let h='';
+  P1.forEach((g,gi)=>{h+=`<div class="grp">${g[0]}</div><div class="grid">`;
+    g[1].forEach((f,fi)=>{const id=`f${gi}_${fi}`;f.id=id;fields.push(f);
+      h+=`<div><label for="${id}">${f.l}</label><input type="text" id="${id}" autocomplete="off"></div>`});
+    h+='</div>'});
+  $('capForm').innerHTML=h;
+}
+function ok1(f,v){
+  const x=norm(v);if(!x)return false;
+  if(f.k==='num'){const n=parseFloat(x);return !isNaN(n)&&Math.abs(n-f.a)<=(f.t||1e-4)}
+  if(f.k==='inc')return f.a.some(a=>x.includes(a));
+  return f.a.includes(x.replace(/\s/g,''));
+}
+let cap={},mcq,tfq;
+function buildExam(){
+  mcq=shuf(MC.map((m,i)=>({...m,i})).filter(m=>[1,3,5,7].includes(m.i))).map(m=>{const idx=shuf([0,1,2,3]);return {...m,idx}});
+  $('mc').innerHTML=mcq.map((m,qi)=>`<div class="card"><div class="q">${qi+1}. ${m.q}</div>`+
+    m.idx.map(oi=>`<label class="opt"><input type="radio" name="m${qi}" value="${oi}">${m.o[oi]}</label>`).join('')+'</div>').join('');
+  tfq=shuf(TF);
+  $('tfq').innerHTML=tfq.map((t,i)=>`<div class="card"><div class="q">${i+1}. “${t.s}”</div><div class="tf"><label><input type="radio" name="t${i}" value="1"> Verdadera</label><label><input type="radio" name="t${i}" value="0"> Falsa</label></div></div>`).join('');
+}
+$('go').onclick=()=>{
+  if(!$('nom').value.trim()){$('nom').focus();$('nom').style.borderColor='var(--bad)';return}
+  buildCap();$('start').classList.add('hide');$('cap').classList.remove('hide');window.scrollTo(0,0);
+};
+let armed=false,gArmed=false;
+$('close').onclick=()=>{
+  if(!armed){armed=true;$('close').textContent='Confirmar: ya no podré regresar (clic otra vez)';return}
+  fields.forEach(f=>{cap[f.id]=$(f.id).value});
+  $('cap').classList.add('hide');$('capForm').innerHTML='';
+  buildExam();$('exam').classList.remove('hide');window.scrollTo(0,0);
+};
+$('grade').onclick=()=>{
+  const un=[];
+  mcq.forEach((m,qi)=>{if(!document.querySelector(`input[name=m${qi}]:checked`))un.push('P2-'+(qi+1))});
+  tfq.forEach((t,i)=>{if(!document.querySelector(`input[name=t${i}]:checked`))un.push('P3-'+(i+1))});
+  if(un.length&&!gArmed){gArmed=true;$('grade').textContent='Faltan '+un.length+' sin contestar. Clic otra vez para calificar así';return}
+  let s1=0,s2=0,s3=0,rev='';
+  const w1=2/fields.length;
+  fields.forEach(f=>{
+    if(ok1(f,cap[f.id]))s1+=w1;
+    else{const c=f.show||(f.k==='num'?f.a:f.a[0]);rev+=`<div class="rev"><b>Parte 1 · ${f.l}</b><br>Tu respuesta: ${esc(cap[f.id])||'(vacío)'} · Correcta: <span class="ok">${c}</span></div>`}
+  });
+  mcq.forEach((m,qi)=>{
+    const sel=document.querySelector(`input[name=m${qi}]:checked`);
+    if(sel&&+sel.value===m.c)s2+=1;
+    else rev+=`<div class="rev"><b>Parte 2 · ${m.q}</b><br>Tu respuesta: ${sel?m.o[+sel.value]:'(sin responder)'}<br>Correcta: <span class="ok">${m.o[m.c]}</span></div>`;
+  });
+  tfq.forEach((t,i)=>{
+    const sel=document.querySelector(`input[name=t${i}]:checked`);
+    const v=sel?sel.value==='1':null;
+    if(v===t.v)s3+=.5;
+    else rev+=`<div class="rev"><b>Parte 3 · “${t.s}”</b><br>Era <span class="ok">${t.v?'verdadera':'falsa'}</span>${t.f?'. '+t.f:'.'}</div>`;
+  });
+  const tot=s1+s2+s3,f2=n=>Math.round(n*100)/100;
+  const nm=$('nom').value.trim();
+  const sumText=`AUDITOR DEL SIMPLEX\nNombre: ${nm}\nCalificación: ${f2(tot)} / 9 (la Parte 4 vale 1 pt más y la revisa el equipo)\nParte 1: ${f2(s1)} / 2\nParte 2: ${f2(s2)} / 4\nParte 3: ${f2(s3)} / 3\nParte 4 (recomendación): ${$('rec').value.trim()||'(vacía)'}`;
+  $('exam').classList.add('hide');
+  $('res').innerHTML=`<div class="card"><div class="sub">${esc($('nom').value.trim())}</div><div class="score">${f2(tot)} / 9</div>
+  <p>Parte 1: ${f2(s1)} / 2 · Parte 2: ${f2(s2)} / 4 · Parte 3: ${f2(s3)} / 3<br>La Parte 4 (1 pt) la califica el equipo.</p>
+  <p class="sub">Tu recomendación: ${esc($('rec').value)||'(vacía)'}</p>
+  <p><b>Entrega:</b> copia este resultado (lleva tu nombre) y mándaselo al equipo.</p><textarea id="sum" readonly style="min-height:190px">${esc(sumText)}</textarea><p><button id="cp">Copiar resultado</button></p></div>
+  <h2>Revisión</h2>${rev||'<div class="rev g">¡Sin errores! Excelente atención. 🎯</div>'}
+  <p><button class="sec" onclick="location.reload()">Intentar de nuevo</button></p>`;
+  $('res').classList.remove('hide');window.scrollTo(0,0);
+  $('cp').onclick=()=>{const t=$('sum');t.select();let ok=false;try{ok=document.execCommand('copy')}catch(e){}
+    if(ok){$('cp').textContent='¡Copiado!'}
+    else if(navigator.clipboard){navigator.clipboard.writeText(t.value).then(()=>{$('cp').textContent='¡Copiado!'},()=>{$('cp').textContent='Selecciona el texto y cópialo'})}
+    else{$('cp').textContent='Selecciona el texto y cópialo'}};
+};
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+</script>
+</body>
+</html>
+'''
+
+ruta = Path("index.html").resolve()
+ruta.write_text(HTML, encoding="utf-8")
+print("Archivo creado:", ruta)
+webbrowser.open(ruta.as_uri())
